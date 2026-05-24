@@ -39,6 +39,30 @@ Omni-Net Terminal (Code Name: Plumber) is an advanced, aesthetic, and multi-func
 ## 🚀 Installation & Deployment
 
 ### 1. Clone the Repository
-```bash
+
 git clone [https://github.com/YourUsername/YourRepoName.git](https://github.com/YourUsername/YourRepoName.git)
 cd YourRepoName
+
+
+### 2. Install Dependencies
+pip install -r requirements.txt
+
+### 3. Environment Variables Setup (.env)
+Create a .env file in the root directory and configure the following:
+BOT_TOKEN=your_telegram_bot_token
+MONGO_URI=your_mongodb_connection_string
+OWNER_ID=your_personal_telegram_id
+
+# Supports multiple groups by separating IDs with commas
+CLASS_GROUP_ID=-100111111111, -100222222222
+LOG_GROUP_ID=-100333333333
+
+### 4. Run the Bot (Using PM2 for 24/7 Uptime)
+pm2 start main.py --name "plumber" --interpreter python3
+pm2 save
+
+## 💡 Usage Highlights
+* **Type /start to boot up the Omni-Net Terminal and access the interactive interactive UI.
+* **Auto-Delete Mechanism: To keep group chats clean, academic commands and start menus auto-delete after 60 seconds to 5 minutes.
+* **Access Clearance: Standard users trying to access the Admin Console will receive a strict Level 9 Clearance Required error.
+* **Created and maintained by Ben (The Architect)
