@@ -41,7 +41,8 @@ Omni-Net Terminal (Code Name: Plumber) is an advanced, aesthetic, and multi-func
 ### 1. Clone the Repository
 
 git clone https://github.com/nobix666/classbot.git
-cd YourRepoName
+
+cd classbot
 
 
 ### 2. Install Dependencies
