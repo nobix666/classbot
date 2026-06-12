@@ -24,6 +24,26 @@ def get_class_groups():
         logger.error("CLASS_GROUP_ID format မှားယွင်းနေပါသည်။ ကော်မာဖြင့်သာ ခြားပါ။")
         return []
 
+async def build_target_keyboard(context: ContextTypes.DEFAULT_TYPE, prefix_send: str, prefix_cancel: str):
+    """Group များကိုရှာဖွေပြီး Send လုပ်မည့် Inline Keyboard တည်ဆောက်ပေးသော Helper"""
+    group_ids = get_class_groups()
+    keyboard = []
+    
+    for gid in group_ids:
+        try:
+            chat = await context.bot.get_chat(gid)
+            title = chat.title[:25] + "..." if len(chat.title) > 25 else chat.title
+        except:
+            title = f"Group ID: {gid}"
+            
+        keyboard.append([InlineKeyboardButton(f"📤 SEND TO: {title}", callback_data=f"{prefix_send}_{gid}")])
+        
+    if len(group_ids) > 1:
+        keyboard.append([InlineKeyboardButton("🌍 SEND TO: BOTH GROUPS", callback_data=f"{prefix_send}_all")])
+        
+    keyboard.append([InlineKeyboardButton("❌ ABORT", callback_data=prefix_cancel)])
+    return InlineKeyboardMarkup(keyboard)
+
 # ================= HELPER FUNCTIONS =================
 async def auto_delete_job(context: ContextTypes.DEFAULT_TYPE):
     try: await context.bot.delete_message(chat_id=context.job.chat_id, message_id=context.job.data)
@@ -53,29 +73,31 @@ async def confess_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     
-    keyboard = [[InlineKeyboardButton("✅ SEND", callback_data="send_confess"),
-                 InlineKeyboardButton("❌ ABORT", callback_data="cancel_confess")]]
+    markup = await build_target_keyboard(context, "send_confess", "cancel_confess")
     await update.message.reply_text(
-        f"<b>📝 VERIFY (Anonymous)</b>\n<pre>{update.message.text}</pre>",
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML
+        f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>",
+        reply_markup=markup, parse_mode=ParseMode.HTML
     )
     return CONFESS_CONFIRM
 
 async def confess_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "send_confess":
+    
+    if query.data.startswith("send_confess"):
+        target = query.data.replace("send_confess_", "")
+        group_ids = get_class_groups()
+        target_ids = group_ids if target == "all" else [int(target)]
+        
         msg = context.user_data.get('msg', '')
         
-        # 👈 [Multi-Group] ထည့်သွင်းထားသော Group အားလုံးသို့ ပို့မည်
-        group_ids = get_class_groups()
-        for gid in group_ids:
+        for gid in target_ids:
             try: 
                 await context.bot.send_message(chat_id=gid, text=f"<b>#Confession</b>\n<pre>{msg}</pre>\n\n<i>- Anonymous</i>{FOOTER}", parse_mode=ParseMode.HTML)
             except Exception as e: logger.error(f"Group {gid} သို့ပို့ရန်အဆင်မပြေပါ: {e}")
         
         if LOG_GROUP_ID != 0:
-            log_txt = f"🚨 <b>SYSTEM LOG | #Confession (Anonymous)</b>\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
+            log_txt = f"🚨 <b>SYSTEM LOG | #Confession (Anonymous)</b>\n🎯 <b>Target:</b> {target}\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
             try: await context.bot.send_message(LOG_GROUP_ID, text=log_txt, parse_mode=ParseMode.HTML)
             except: pass
         await query.edit_message_text("<pre>✅ DELIVERED.</pre>", parse_mode=ParseMode.HTML)
@@ -108,30 +130,32 @@ async def c1_receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = context.user_data['c1_msg']
     name = context.user_data['c1_name']
     
-    keyboard = [[InlineKeyboardButton("✅ SEND", callback_data="send_c1"),
-                 InlineKeyboardButton("❌ ABORT", callback_data="cancel_c1")]]
+    markup = await build_target_keyboard(context, "send_c1", "cancel_c1")
     await update.message.reply_text(
-        f"<b>📝 PREVIEW</b>\n<pre>{msg}</pre>\n\n<i>- {name}</i>",
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML
+        f"<b>📝 PREVIEW & SELECT TARGET</b>\n<pre>{msg}</pre>\n\n<i>- {name}</i>",
+        reply_markup=markup, parse_mode=ParseMode.HTML
     )
     return C1_CONFIRM
 
 async def c1_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "send_c1":
+    
+    if query.data.startswith("send_c1"):
+        target = query.data.replace("send_c1_", "")
+        group_ids = get_class_groups()
+        target_ids = group_ids if target == "all" else [int(target)]
+        
         msg = context.user_data.get('c1_msg', '')
         name = context.user_data.get('c1_name', 'Anonymous')
         
-        # 👈 [Multi-Group] ထည့်သွင်းထားသော Group အားလုံးသို့ ပို့မည်
-        group_ids = get_class_groups()
-        for gid in group_ids:
+        for gid in target_ids:
             try: 
                 await context.bot.send_message(chat_id=gid, text=f"<b>#Confession</b>\n<pre>{msg}</pre>\n\n<i>- {name}</i>{FOOTER}", parse_mode=ParseMode.HTML)
             except Exception as e: logger.error(f"Group {gid} သို့ပို့ရန်အဆင်မပြေပါ: {e}")
         
         if LOG_GROUP_ID != 0:
-            log_txt = f"🚨 <b>SYSTEM LOG | #Confession (Custom)</b>\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🎭 <b>Signature:</b> {name}\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
+            log_txt = f"🚨 <b>SYSTEM LOG | #Confession (Custom)</b>\n🎯 <b>Target:</b> {target}\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🎭 <b>Signature:</b> {name}\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
             try: await context.bot.send_message(LOG_GROUP_ID, text=log_txt, parse_mode=ParseMode.HTML)
             except: pass
         await query.edit_message_text(f"<pre>✅ DELIVERED as '- {name}'.</pre>", parse_mode=ParseMode.HTML)
@@ -156,29 +180,31 @@ async def notice_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
-    keyboard = [[InlineKeyboardButton("✅ SEND NOTICE", callback_data="send_notice"),
-                 InlineKeyboardButton("❌ ABORT", callback_data="cancel_notice")]]
+    markup = await build_target_keyboard(context, "send_notice", "cancel_notice")
     await update.message.reply_text(
-        f"<b>📝 VERIFY NOTICE</b>\n<pre>{update.message.text}</pre>",
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML
+        f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>",
+        reply_markup=markup, parse_mode=ParseMode.HTML
     )
     return NOTICE_CONFIRM
 
 async def notice_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "send_notice":
+    
+    if query.data.startswith("send_notice"):
+        target = query.data.replace("send_notice_", "")
+        group_ids = get_class_groups()
+        target_ids = group_ids if target == "all" else [int(target)]
+        
         msg = context.user_data.get('notice_msg', '')
         
-        # 👈 [Multi-Group] ထည့်သွင်းထားသော Group အားလုံးသို့ ပို့မည်
-        group_ids = get_class_groups()
-        for gid in group_ids:
+        for gid in target_ids:
             try: 
                 await context.bot.send_message(chat_id=gid, text=f"<b>#Notice</b>\n<pre>{msg}</pre>\n\n<i>- Anonymous</i>{FOOTER}", parse_mode=ParseMode.HTML)
             except Exception as e: logger.error(f"Group {gid} သို့ပို့ရန်အဆင်မပြေပါ: {e}")
         
         if LOG_GROUP_ID != 0:
-            log_txt = f"🚨 <b>SYSTEM LOG | #Notice</b>\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
+            log_txt = f"🚨 <b>SYSTEM LOG | #Notice</b>\n🎯 <b>Target:</b> {target}\n👤 <b>User:</b> @{context.user_data['sender_uname']} (ID: <code>{context.user_data['sender_id']}</code>)\n🕒 <b>Time:</b> {context.user_data['send_time']}\n📝 <b>Content:</b>\n<pre>{msg}</pre>"
             try: await context.bot.send_message(LOG_GROUP_ID, text=log_txt, parse_mode=ParseMode.HTML)
             except: pass
         await query.edit_message_text("<pre>✅ NOTICE DELIVERED.</pre>", parse_mode=ParseMode.HTML)

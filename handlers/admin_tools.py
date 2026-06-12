@@ -1,6 +1,7 @@
 import os
 import csv
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -59,7 +60,7 @@ async def import_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(f_path): os.remove(f_path)
 
 async def mention_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Group ထဲရှိ လူအကုန်လုံးကို Tag တွဲခေါ်မည် (Group Admin များပါ သုံးနိုင်သည်)"""
+    """Group ထဲရှိ လူအကုန်လုံးကို ၅ ယောက်တစ်ခွဲပြီး Tag တွဲခေါ်မည်"""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -69,7 +70,6 @@ async def mention_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_authorized = True
     else:
         try:
-            # Group ထဲက Admin စာရင်းကို လှမ်းယူမည်
             admins = await context.bot.get_chat_administrators(chat_id)
             admin_ids = [admin.user.id for admin in admins]
             if user_id in admin_ids:
@@ -77,32 +77,45 @@ async def mention_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error getting admins: {e}")
 
-    # Admin မဟုတ်ရင် ဘာမှမလုပ်ဘဲ ရပ်မည်
     if not is_authorized: return
 
-    # User ရိုက်လိုက်သော /mention စာသားကို ဖျက်မည်
     try: await update.message.delete() 
     except: pass
     
     db = get_db()
     if db is None: return
     
-    # 2. MongoDB ထဲမှ ထို Group ၏ Members များကို ပြန်ရှာခြင်း
     cursor = db.group_members.find({"chat_id": chat_id})
     members = await cursor.to_list(length=None)
     
     if not members: 
-        msg = await context.bot.send_message(chat_id, "⚠️ Database တွင် Member စာရင်း မရှိသေးပါ။ CSV ကို /import အရင်လုပ်ပါ။")
+        msg = await context.bot.send_message(chat_id, "⚠️ Database တွင် Member စာရင်း မရှိသေးပါ။")
         schedule_delete(context, chat_id, msg.message_id, 10)
         return
     
-    # 3. Mention စာသား တည်ဆောက်ပြီး ပို့ခြင်း
-    delay = 60 # 60 စက္ကန့်အကြာတွင် ဖျက်မည်
-    txt = "<b>🔔 SYSTEM ALERT</b>\n"
-    for i, m in enumerate(members):
-        txt += f'<a href="tg://user?id={m["user_id"]}">▓</a> '
-        if (i+1) % 5 == 0: txt += "\n" # ၅ ယောက်တစ်ကြောင်း ဆင်းမည်
-    txt += f"\n<pre>Deleting in {delay}s</pre>"
+    # 3. ၅ ယောက်တစ်တွဲခွဲ၍ စာပို့ခြင်း (Notification သေချာ မြည်စေရန်)
+    delay = 300 # ၃၀၀ စက္ကန့် (၅ မိနစ်)
     
-    sent = await context.bot.send_message(chat_id, txt, parse_mode=ParseMode.HTML)
-    schedule_delete(context, chat_id, sent.message_id, delay)
+    # Message ထဲတွင် ထည့်လိုသော အကြောင်းအရာရှိပါက
+    custom_text = update.message.text.replace('/mention', '').strip()
+    reason = f"\n📣 <b>{custom_text}</b>" if custom_text else ""
+    
+    # လူ (၅) ယောက်စီ ခွဲထုတ်ခြင်း (Batching)
+    batch_size = 5
+    for i in range(0, len(members), batch_size):
+        batch_members = members[i:i+batch_size]
+        
+        txt = "<b>🔔 SYSTEM ALERT</b>\n"
+        for m in batch_members:
+            # မြင်သာစေရန် နာမည်အတို သို့မဟုတ် သင်္ကေတ သုံးနိုင်သည်
+            txt += f'<a href="tg://user?id={m["user_id"]}">👤 {m.get("first_name", "Member")[:5]}</a> '
+        
+        txt += f"{reason}\n<pre>Deleting in {delay//60} mins</pre>"
+        
+        try:
+            sent = await context.bot.send_message(chat_id, txt, parse_mode=ParseMode.HTML)
+            schedule_delete(context, chat_id, sent.message_id, delay)
+            # FloodWait (Ban ခံရခြင်း) မှ ကာကွယ်ရန် စာတစ်စောင်နှင့် တစ်စောင်ကြား ၂ စက္ကန့် နားမည်
+            await asyncio.sleep(2) 
+        except Exception as e:
+            logger.error(f"Mention Error: {e}")

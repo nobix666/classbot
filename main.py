@@ -19,6 +19,7 @@ from handlers.tools import (
 )
 
 # Social Handlers နှင့် Conversation States များကို ခေါ်ယူခြင်း
+from handlers.social import set_cooldown_cmd, set_cooldown_action
 from handlers.social import (
     confess_start, confess_receive, confess_action,
     c1_start, c1_receive_msg, c1_receive_name, c1_action,
@@ -86,6 +87,10 @@ def main():
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CallbackQueryHandler(menu_handler, pattern="^(menu_|back_to_main)"))
 
+    # Cooldown Management
+    app.add_handler(CommandHandler("setcooldown", set_cooldown_cmd))
+    app.add_handler(CallbackQueryHandler(set_cooldown_action, pattern="^setcd_"))
+    
     # Fund Management Commands
     app.add_handler(CommandHandler("addfund", add_fund))
     app.add_handler(CommandHandler("clearfund", clear_fund))

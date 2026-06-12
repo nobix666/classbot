@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -31,15 +32,18 @@ def get_class_groups():
         return []
 
 # ================= 🗑 Auto Delete Helpers =================
-async def auto_delete_message(context: ContextTypes.DEFAULT_TYPE):
-    job_data = context.job.data
-    chat_id = job_data['chat_id']
-    for msg_id in job_data['msg_ids']:
-        try: await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+background_tasks = set()
+
+async def delayed_delete_task(bot, chat_id, msg_ids, delay):
+    await asyncio.sleep(delay)
+    for msg_id in msg_ids:
+        try: await bot.delete_message(chat_id=chat_id, message_id=msg_id)
         except: pass
 
 def schedule_academic_delete(context, chat_id, msg_ids, delay=60):
-    context.job_queue.run_once(auto_delete_message, delay, data={'chat_id': chat_id, 'msg_ids': msg_ids})
+    task = asyncio.create_task(delayed_delete_task(context.bot, chat_id, msg_ids, delay))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 # ================= 🔔 ၁၀ မိနစ်ကြိုတင် သတိပေးစနစ် =================
 async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
@@ -54,19 +58,25 @@ async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     target_time = now + timedelta(minutes=10)
     target_time_str = target_time.strftime("%H:%M")
 
-    record = await db.timetable.find_one({"day": current_day})
-    if not record or "periods" not in record: return
+    cursor = db.timetable.find({"day": current_day})
+    records = await cursor.to_list(length=None)
+    if not records: return
 
     group_ids = get_class_groups()
     if not group_ids: return
 
     reminders_to_send = {}
-    for p in record["periods"]:
-        start_time = p["time"].split("-")[0].strip()
-        if start_time == target_time_str:
-            key = (p["subject"], p["teacher"], p["room"])
-            if key not in reminders_to_send: reminders_to_send[key] = []
-            if p["major"] not in reminders_to_send[key]: reminders_to_send[key].append(p["major"])
+    
+    for record in records:
+        major_name = record.get("major", "ALL").upper()
+        if "periods" not in record: continue
+        
+        for p in record["periods"]:
+            start_time = p["time"].split("-")[0].strip()
+            if start_time == target_time_str:
+                key = (p["subject"], p["teacher"], p["room"])
+                if key not in reminders_to_send: reminders_to_send[key] = []
+                if major_name not in reminders_to_send[key]: reminders_to_send[key].append(major_name)
 
     for (subject, teacher, room), majors in reminders_to_send.items():
         tag = " <code>[ALL]</code>" if "ALL" in majors else f" <code>[{', '.join(majors)}]</code>"
@@ -78,28 +88,38 @@ async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
                 schedule_academic_delete(context, gid, [sent_msg.message_id], 600)
             except: pass
 
-# ================= 📅 TIMETABLE VIEW (ကျောင်းသားများအတွက်) =================
+# ================= 📅 TIMETABLE VIEW =================
 async def build_timetable_message(major: str, day_idx: int):
     day_name = DAYS_OF_WEEK[day_idx]
     db = get_db()
-    record = await db.timetable.find_one({"day": day_name}) if db is not None else None
     
     text = f"📅 <b>{major.upper()} TIMETABLE - {day_name}</b>\n━━━━━━━━━━━━━━━━━━\n"
     has_class = False
     
-    if record and "periods" in record:
-        for p in record["periods"]:
-            if p["major"].upper() == major.upper() or p["major"].upper() == "ALL":
-                has_class = True
-                text += f"⏰ <b>{p['time']}</b>\n"
-                text += f"📚 Subject: {p['subject']}\n"
-                text += f"👨‍🏫 Teacher: {p['teacher']}\n"
-                text += f"🏫 Room: {p['room']}\n\n"
+    if db is not None:
+        cursor = db.timetable.find({
+            "day": day_name, 
+            "major": {"$in": [major.lower(), "all"]}
+        })
+        records = await cursor.to_list(length=None)
+        
+        all_periods = []
+        for record in records:
+            if "periods" in record:
+                all_periods.extend(record["periods"])
+                
+        all_periods.sort(key=lambda x: x["time"])
+
+        for p in all_periods:
+            has_class = True
+            text += f"⏰ <b>{p['time']}</b>\n"
+            text += f"📚 Subject: {p['subject']}\n"
+            text += f"👨‍🏫 Teacher: {p['teacher']}\n"
+            text += f"🏫 Room: {p['room']}\n\n"
                 
     if not has_class:
         text += "🎉 <i>ဒီနေ့အတွက် အတန်းမရှိပါ။ (Free Day)</i>\n"
 
-    # Navigation Keyboard
     prev_idx = (day_idx - 1) % 5
     next_idx = (day_idx + 1) % 5
     keyboard = [[
@@ -110,26 +130,28 @@ async def build_timetable_message(major: str, day_idx: int):
     return text, InlineKeyboardMarkup(keyboard)
 
 async def get_timetable_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/it, /ec စသော Command များခေါ်လျှင် အလုပ်လုပ်မည်"""
     chat_id = update.effective_chat.id
     user_msg_id = update.message.message_id
     
     cmd = update.message.text.split()[0].lower().replace('/', '')
     major = cmd.upper()
     
-    # လက်ရှိနေ့ကို ရှာမည် (စနေတနင်္ဂနွေဆိုလျှင် တနင်္လာနေ့ပြမည်)
     mm_tz = timezone(timedelta(hours=6, minutes=30))
     now = datetime.now(mm_tz)
-    day_idx = now.weekday() if now.weekday() < 5 else 0
+    
+    day_idx = now.weekday()
+    
+    if now.hour >= 16:
+        day_idx += 1
+        
+    if day_idx > 4:
+        day_idx = 0
     
     text, markup = await build_timetable_message(major, day_idx)
     sent = await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
-    
-    # ၆၀ စက္ကန့်အကြာ ဖျက်မည်
     schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 60)
 
 async def change_timetable_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Next / Prev ခလုတ် နှိပ်လျှင် အလုပ်လုပ်မည်"""
     query = update.callback_query
     if query.data == "ignore": return await query.answer()
     
@@ -157,7 +179,8 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = "📝 <b>ASSIGNMENTS & TASKS</b>" if task_type == "Assignment" else "📚 <b>TUTORIALS & EXAMS</b>"
     
     if not tasks:
-        msg = f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 <b>လက်ရှိတွင် မည်သည့်အရာမှ မရှိသေးပါ။</b>"
+        # 📌 ဤနေရာတွင် Admin ကြီး လိုချင်သော စာသားကို ပြောင်းထားပါသည်
+        msg = f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 <b>ဘာမှမရှိသေးဘူး။ ဘာလဲ စာလုပ်ချင်လို့လား။</b>"
         sent = await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
         schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 60)
         return
@@ -181,9 +204,13 @@ async def add_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db()
     if db is None: return
     
-    period = {"time": time, "major": major, "room": room, "teacher": teacher, "subject": subject}
-    await db.timetable.update_one({"day": day}, {"$push": {"periods": period}}, upsert=True)
-    await update.message.reply_text(f"✅ {day} တွင် အတန်းချိန်အသစ် သွင်းပြီးပါပြီ။")
+    period = {"time": time, "room": room, "teacher": teacher, "subject": subject}
+    await db.timetable.update_one(
+        {"day": day, "major": major.lower()}, 
+        {"$push": {"periods": period}}, 
+        upsert=True
+    )
+    await update.message.reply_text(f"✅ {day} တွင် <b>{major.upper()}</b> အတွက် အတန်းချိန်အသစ် သွင်းပြီးပါပြီ။", parse_mode=ParseMode.HTML)
 
 async def del_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_check(update, context): return
@@ -192,17 +219,28 @@ async def del_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db = get_db()
     if db is None: return
-    await db.timetable.update_one({"day": args[0]}, {"$pull": {"periods": {"time": args[1], "major": args[2]}}})
-    await update.message.reply_text(f"🗑️ {args[0]} မှ {args[1]} ({args[2]}) အတန်းကို ဖျက်လိုက်ပါပြီ။")
+    
+    await db.timetable.update_one(
+        {"day": args[0], "major": args[2].lower()}, 
+        {"$pull": {"periods": {"time": args[1]}}}
+    )
+    await update.message.reply_text(f"🗑️ {args[0]} မှ {args[1]} ({args[2].upper()}) အတန်းကို ဖျက်လိုက်ပါပြီ။")
 
 async def clear_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_check(update, context): return
-    if not context.args: return await update.message.reply_text("⚠️ `/clearday <Day>`", parse_mode=ParseMode.HTML)
+    if len(context.args) < 2: return await update.message.reply_text("⚠️ အသုံးပြုနည်း: `/clearday <Day> <Major>`", parse_mode=ParseMode.HTML)
+    
+    day = context.args[0]
+    major = context.args[1]
     
     db = get_db()
     if db is None: return
-    await db.timetable.update_one({"day": context.args[0]}, {"$set": {"periods": []}})
-    await update.message.reply_text(f"🧹 {context.args[0]} ၏ အတန်းချိန်အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ။")
+    
+    await db.timetable.update_one(
+        {"day": day, "major": major.lower()}, 
+        {"$set": {"periods": []}}
+    )
+    await update.message.reply_text(f"🧹 {day} ၏ <b>{major.upper()}</b> အတန်းချိန်အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ။", parse_mode=ParseMode.HTML)
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_check(update, context): return
