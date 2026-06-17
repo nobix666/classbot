@@ -24,7 +24,7 @@ C1_MSG, C1_NAME, C1_CONFIRM = range(4, 7)
 APPROVER_ADD = 7
 NICK_MSG, NICK_CONFIRM = range(8, 10)
 
-# ================= MULTI-GROUP HELPER =================
+# ================= MULTI-GROUP & RESTRICTION HELPER =================
 def get_class_groups():
     group_id_str = os.getenv("CLASS_GROUP_ID", "0")
     try:
@@ -33,17 +33,39 @@ def get_class_groups():
         logger.error("CLASS_GROUP_ID format မှားယွင်းနေပါသည်။")
         return []
 
-async def build_target_keyboard(context: ContextTypes.DEFAULT_TYPE, prefix_send: str, prefix_cancel: str):
+async def get_allowed_groups(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> list[int]:
+    """တတိယမြောက် Group အတွက် Membership စစ်ဆေးပေးသည့် Function"""
     group_ids = get_class_groups()
+    allowed = []
+    for idx, gid in enumerate(group_ids):
+        # 📌 idx == 2 ဆိုသည်မှာ ကော်မာဖြင့်ခြားထားသော တတိယမြောက် Group ကို ဆိုလိုသည်
+        if idx == 2:
+            try:
+                member = await context.bot.get_chat_member(chat_id=gid, user_id=user_id)
+                if member.status in ['member', 'administrator', 'creator', 'restricted']:
+                    allowed.append(gid)
+            except Exception as e:
+                # Bot ကို Kick ထားလျှင် သို့မဟုတ် User မရှိလျှင် Error တက်မည်ဖြစ်၍ ကျော်သွားပါမည်
+                pass 
+        else:
+            allowed.append(gid)
+    return allowed
+
+async def build_target_keyboard(user_id: int, context: ContextTypes.DEFAULT_TYPE, prefix_send: str, prefix_cancel: str):
+    allowed_groups = await get_allowed_groups(user_id, context)
     keyboard = []
-    for gid in group_ids:
+    
+    for gid in allowed_groups:
         try:
             chat = await context.bot.get_chat(gid)
             title = chat.title[:25] + "..." if len(chat.title) > 25 else chat.title
         except:
             title = f"Group ID: {gid}"
         keyboard.append([InlineKeyboardButton(f"📤 SEND TO: {title}", callback_data=f"{prefix_send}_{gid}")])
-    if len(group_ids) > 1: keyboard.append([InlineKeyboardButton("🌍 SEND TO: BOTH GROUPS", callback_data=f"{prefix_send}_all")])
+        
+    if len(allowed_groups) > 1:
+        keyboard.append([InlineKeyboardButton("🌍 SEND TO: ALL ALLOWED GROUPS", callback_data=f"{prefix_send}_all")])
+        
     keyboard.append([InlineKeyboardButton("❌ ABORT", callback_data=prefix_cancel)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -51,12 +73,10 @@ async def build_target_keyboard(context: ContextTypes.DEFAULT_TYPE, prefix_send:
 async def get_user_identity(user_id: int) -> str:
     db = get_db()
     if db is None: return f"#{str(user_id)[-4:]}"
-    
     user_data = await db.user_settings.find_one({"user_id": user_id})
     if user_data:
         if "nickname" in user_data and user_data["nickname"]: return user_data["nickname"]
         if "emoji" in user_data and user_data["emoji"]: return user_data["emoji"]
-        
     new_emoji = random.choice(RANDOM_EMOJIS)
     await db.user_settings.update_one({"user_id": user_id}, {"$set": {"emoji": new_emoji}}, upsert=True)
     return new_emoji
@@ -271,8 +291,11 @@ async def admin_approval_action(update: Update, context: ContextTypes.DEFAULT_TY
 
     if action == "aprv":
         target = post['target']
-        group_ids = get_class_groups()
-        target_ids = group_ids if target == "all" else [int(target)]
+        sender_id = post['sender_id']
+        
+        # 📌 Admin Approved ပြီးလျှင် Sender ၏ Membership အတိုင်းသာ ပို့ပေးမည်
+        allowed_groups = await get_allowed_groups(sender_id, context)
+        target_ids = allowed_groups if target == "all" else [int(target)]
         
         if post['type'] == 'confess_anon': final_msg = f"<b>#Confession</b>\n<pre>{post['msg']}</pre>\n\n<i>- Anonymous</i>{FOOTER}"
         elif post['type'] == 'confess_custom': final_msg = f"<b>#Confession</b>\n<pre>{post['msg']}</pre>\n\n<i>- {post.get('name', 'Anonymous')}</i>{FOOTER}"
@@ -363,7 +386,9 @@ async def confess_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['msg'] = update.message.text
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-    markup = await build_target_keyboard(context, "send_confess", "cancel_confess")
+    
+    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
+    markup = await build_target_keyboard(update.effective_user.id, context, "send_confess", "cancel_confess")
     await update.message.reply_text(f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>", reply_markup=markup, parse_mode=ParseMode.HTML)
     return CONFESS_CONFIRM
 
@@ -456,7 +481,9 @@ async def c1_receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     msg = context.user_data['c1_msg']
     name = context.user_data['c1_name']
-    markup = await build_target_keyboard(context, "send_c1", "cancel_c1")
+    
+    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
+    markup = await build_target_keyboard(update.effective_user.id, context, "send_c1", "cancel_c1")
     await update.message.reply_text(f"<b>📝 PREVIEW & SELECT TARGET</b>\n<pre>{msg}</pre>\n\n<i>- {name}</i>", reply_markup=markup, parse_mode=ParseMode.HTML)
     return C1_CONFIRM
 
@@ -538,7 +565,8 @@ async def notice_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
-    markup = await build_target_keyboard(context, "send_notice", "cancel_notice")
+    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
+    markup = await build_target_keyboard(update.effective_user.id, context, "send_notice", "cancel_notice")
     await update.message.reply_text(
         f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>",
         reply_markup=markup, parse_mode=ParseMode.HTML
@@ -551,11 +579,12 @@ async def notice_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if query.data.startswith("send_notice"):
             target = query.data.replace("send_notice_", "")
-            group_ids = get_class_groups()
-            target_ids = group_ids if target == "all" else [int(target)]
+            
+            # 📌 User ရှိသော Group များကိုသာ စစ်ထုတ်ပါသည်
+            allowed_groups = await get_allowed_groups(update.effective_user.id, context)
+            target_ids = allowed_groups if target == "all" else [int(target)]
             msg = context.user_data.get('notice_msg', '')
             
-            # 📌 ဤနေရာတွင် User ၏ Custom Nickname သို့မဟုတ် Emoji ကို ရယူပါသည်
             identity = await get_user_identity(update.effective_user.id)
             final_msg = f"<b>#{identity}</b>\n<pre>{msg}</pre>\n\n<i>- {identity}</i>"
             

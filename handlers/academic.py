@@ -10,6 +10,7 @@ from database.db import get_db
 logger = logging.getLogger(__name__)
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+MAJORS = ["it", "mc", "archi", "ep", "ec", "me", "civil"] # Routing အတွက် Default List
 
 # ================= 🛡️ Admin & Helpers =================
 async def is_admin_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -45,7 +46,7 @@ def schedule_academic_delete(context, chat_id, msg_ids, delay=60):
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
-# ================= 🔔 ၁၀ မိနစ်ကြိုတင် သတိပေးစနစ် =================
+# ================= 🔔 ၁၀ မိနစ်ကြိုတင် သတိပေးစနစ် (ROUTING SYSTEM ပါဝင်သည်) =================
 async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     db = get_db()
     if db is None: return
@@ -65,6 +66,13 @@ async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     group_ids = get_class_groups()
     if not group_ids: return
 
+    # 📌 Group အလိုက် ခွင့်ပြုထားသော Major များကို DB မှ ကြိုဆွဲထားပါမည်
+    group_routes = {}
+    for gid in group_ids:
+        doc = await db.group_routes.find_one({"group_id": gid})
+        # Database တွင် မရှိသေးပါက Default အနေဖြင့် Major အကုန်လုံးကို ဖွင့်ပေးထားမည်
+        group_routes[gid] = doc.get("majors", MAJORS) if doc else MAJORS
+
     reminders_to_send = {}
     
     for record in records:
@@ -78,15 +86,28 @@ async def class_reminder_job(context: ContextTypes.DEFAULT_TYPE):
                 if key not in reminders_to_send: reminders_to_send[key] = []
                 if major_name not in reminders_to_send[key]: reminders_to_send[key].append(major_name)
 
-    for (subject, teacher, room), majors in reminders_to_send.items():
-        tag = " <code>[ALL]</code>" if "ALL" in majors else f" <code>[{', '.join(majors)}]</code>"
+    for (subject, teacher, room), class_majors in reminders_to_send.items():
+        tag = " <code>[ALL]</code>" if "ALL" in class_majors else f" <code>[{', '.join(class_majors)}]</code>"
         msg = f"🔔 <b>အတန်းစရန် (၁၀) မိနစ်သာ လိုပါတော့သည်!</b>\n\n📚 <b>ဘာသာရပ်:</b> {subject}{tag}\n👨‍🏫 <b>ဆရာ/မ:</b> {teacher}\n🏫 <b>အခန်း:</b> {room}"
         
         for gid in group_ids:
-            try:
-                sent_msg = await context.bot.send_message(chat_id=gid, text=msg, parse_mode=ParseMode.HTML)
-                schedule_academic_delete(context, gid, [sent_msg.message_id], 600)
-            except: pass
+            allowed_majors = group_routes.get(gid, [])
+            should_send = False
+            
+            # 📌 အတန်းချိန်သည် ALL ဖြစ်လျှင် သို့မဟုတ် Group ၏ ခွင့်ပြုစာရင်းထဲတွင် ထို Major ပါဝင်လျှင် ပို့မည်
+            if "ALL" in class_majors:
+                should_send = True
+            else:
+                for m in class_majors:
+                    if m.lower() in allowed_majors:
+                        should_send = True
+                        break
+            
+            if should_send:
+                try:
+                    sent_msg = await context.bot.send_message(chat_id=gid, text=msg, parse_mode=ParseMode.HTML)
+                    schedule_academic_delete(context, gid, [sent_msg.message_id], 600)
+                except: pass
 
 # ================= 📅 TIMETABLE VIEW =================
 async def build_timetable_message(major: str, day_idx: int):
@@ -179,7 +200,6 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = "📝 <b>ASSIGNMENTS & TASKS</b>" if task_type == "Assignment" else "📚 <b>TUTORIALS & EXAMS</b>"
     
     if not tasks:
-        # 📌 ဤနေရာတွင် Admin ကြီး လိုချင်သော စာသားကို ပြောင်းထားပါသည်
         msg = f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 <b>ဘာမှမရှိသေးဘူး။ ဘာလဲ စာလုပ်ချင်လို့လား။</b>"
         sent = await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
         schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 60)
@@ -210,7 +230,7 @@ async def add_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"$push": {"periods": period}}, 
         upsert=True
     )
-    await update.message.reply_text(f"✅ {day} တွင် <b>{major.upper()}</b> အတွက် အတန်းချိန်အသစ် သွင်းပြီးပါပြီ။", parse_mode=ParseMode.HTML)
+    await update.message.reply_text(f"✅ {day} တွင် <b>{major.upper()}</b> အတွက် အတန်းချိန်အသစ် သွင်းပြီးပါပြီ。", parse_mode=ParseMode.HTML)
 
 async def del_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_check(update, context): return
@@ -240,7 +260,7 @@ async def clear_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"day": day, "major": major.lower()}, 
         {"$set": {"periods": []}}
     )
-    await update.message.reply_text(f"🧹 {day} ၏ <b>{major.upper()}</b> အတန်းချိန်အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ။", parse_mode=ParseMode.HTML)
+    await update.message.reply_text(f"🧹 {day} ၏ <b>{major.upper()}</b> အတန်းချိန်အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ。", parse_mode=ParseMode.HTML)
 
 async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_check(update, context): return

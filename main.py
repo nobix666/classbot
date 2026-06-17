@@ -6,6 +6,7 @@ load_dotenv()
 
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 from database.db import connect_db
+from handlers.routing import route_cmd, route_action
 from handlers.academic import add_class, get_timetable_cmd, change_timetable_day, del_class, clear_day, class_reminder_job
 from handlers.tasks import add_task, get_tasks
 from handlers.menu import start, menu_handler
@@ -110,6 +111,10 @@ def main():
     app.add_handler(CommandHandler('delwifi', del_wifi))
     app.add_handler(CommandHandler('addegg', add_egg))
     app.add_handler(CommandHandler('delegg', del_egg))
+
+    # Routing Management
+    app.add_handler(CommandHandler('routes', route_cmd))
+    app.add_handler(CallbackQueryHandler(route_action, pattern="^route_"))
 
     # Crypto & Data Tools
     app.add_handler(CommandHandler(['encrypt', 'decrypt'], encrypt_decrypt))
