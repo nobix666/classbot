@@ -1,38 +1,39 @@
-# 🟢 OMNI-NET TERMINAL V3.0 (Class Management Bot)
+# 🟢 OMNI-NET TERMINAL V3.0 (My Class Bot)
 
-> *"Everything is a system. Everyone is a variable."* > **System Administered by: The Architect (Ben)**
+> *"Everything is a system. Everyone is a variable."* > **Built by a 1st-year IT student trying to survive college: The Architect (Ben)**
 
-Omni-Net Terminal (Code Name: Plumber) is an advanced, aesthetic, and multi-functional Telegram Bot designed specifically for university class management, automated reminders, and student social networking. Built with `python-telegram-bot` and MongoDB, it features an interactive HUD-style UI, auto-deleting messages to prevent chat clutter, and a smart multi-group routing system.
-
----
-
-## 🌟 Core Features
-
-### 🎓 1. Academic Core
-* **Smart Class Reminders:** Automatically sends a reminder 10 minutes before class. Uses "Smart Merge" to combine identical classes across different majors (e.g., `[IT, EP]`) into a single clean message.
-* **Timetable Management:** Fetch daily schedules for 7 distinct majors via simple commands (`/it`, `/ec`, `/civil`, etc.).
-* **Assignments & Tasks:** Track deadlines for tutorials and assignments seamlessly with `/tasks`.
-
-### 💬 2. Social Hub (Multi-Group Support)
-* **Direct Message Confessions:** Interactive Conversation Handler in the bot's DM for submitting confessions.
-* **Named & Anonymous Mode:** Choose to reveal a custom signature (`/confess`) or stay completely hidden (`/confess1`).
-* **Secure Broadcasting:** Admins can broadcast official announcements (`/notice`) across multiple class groups simultaneously.
-* **Log System:** All submissions are mirrored to a secure Admin Log Group.
-
-### 🛠️ 3. Utility Node & Admin Console
-* **System Telemetry:** Live server stats including CPU load, RAM usage, Uptime, and simulated Latency/Network Speed (`/status`).
-* **Tools:** Built-in Base64 Encrypt/Decrypt and Hex/Binary converters.
-* **Admin Controls:** Easily manage database entries natively from Telegram (`/addclass`, `/clearday`, `/addtask`, `/addwifi`).
+Hey guys! I built Omni-Net (Code Name: Plumber) because our class group chat was getting way too messy. Trying to find the timetable, tutorial deadlines, or announcements among 500 stickers is a total nightmare. So, I coded this Telegram bot using Python and MongoDB to handle all the boring class management stuff for us. It also cleans up after itself (auto-delete) so it doesn't spam the group. 
 
 ---
 
-## ⚙️ Tech Stack
+## 🌟 What can it do? (Core Features)
 
-* **Language:** Python 3.9+
+### 🎓 1. Academic Stuff (Lifesavers)
+* **Class Reminders:** It literally texts the group 10 minutes before class starts so we don't sleep through it. It even combines majors if we share a class (e.g., `[IT, EP]`).
+* **Timetable Check:** Just type `/it`, `/ec`, etc., and it drops the timetable for the day. No more scrolling up to find the pinned photo!
+* **Tasks & Assignments:** Type `/tasks` to see what homework we are currently procrastinating on.
+* **Smart Roll Call:** ECs can generate a random 6-digit PIN in class (`/attendance`), and we just type `/rollcall` in the bot's DM to mark attendance. Less paperwork for everyone.
+
+### 💬 2. Social Hub (For the Tea)
+* **Confessions:** Got a crush or wanna rant? Drop a message in the bot's DM. You can put a fake name/signature (`/confess`) or go full ghost mode (`/confess1`).
+* **Notices:** Direct line for announcements (`/notice`) to be broadcasted to all linked class groups.
+* **Log System:** Admins have a secret log group to monitor the system, so don't try to spam or break the bot. We see you 👀.
+
+### 🛠️ 3. Geeky Admin Tools & Utilities
+* **Hmawbi Weather:** Type `/weather` to see if we're going to melt or get soaked in Hmawbi today. It auto-cleans itself after 60 seconds.
+* **System Status:** Type `/status` to see if the VPS is struggling or still breathing (RAM/CPU/Uptime checks).
+* **Admin Commands:** Add classes, clear days, or set tasks directly from Telegram (`/addclass`, `/addtask`). No need to touch the database code manually.
+
+---
+
+## ⚙️ Tech Stack (How I built it)
+
+* **Language:** Python 3.9+ (because I'm an IT major, obviously)
 * **Framework:** `python-telegram-bot` (v20+)
-* **Database:** MongoDB (Motor Asyncio)
-* **Hosting / Process Manager:** PM2 (Node.js)
+* **Database:** MongoDB (Motor Asyncio) - NoSQL saved me so much headache when adding new features.
+* **Hosting:** Running 24/7 on a VPS using PM2 (Node.js).
 * **Hardware Monitoring:** `psutil`
+
 
 ---
 
