@@ -26,27 +26,61 @@ async def is_admin_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except: pass
     return False
 
+# ================= 🎛️ Main Menu Keyboard =================
 def get_main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎓 Academic", callback_data="menu_academic"),
-            InlineKeyboardButton("💬 Social", callback_data="menu_social")
+            InlineKeyboardButton("🎓 Academic & Class", callback_data="menu_academic"),
+            InlineKeyboardButton("💬 Social & Confess", callback_data="menu_social")
         ],
-        [InlineKeyboardButton("🛠️ Utility Node", callback_data="menu_tools")],
-        [InlineKeyboardButton("⚠️ Admin Console", callback_data="menu_admin")]
+        [
+            InlineKeyboardButton("🛠️ Tools & Utility", callback_data="menu_tools"),
+            InlineKeyboardButton("💰 Funds & Info", callback_data="menu_funds")
+        ],
+        [
+            InlineKeyboardButton("📖 Commands Guide", callback_data="menu_examples"),
+            InlineKeyboardButton("⚠️ Admin Console", callback_data="menu_admin")
+        ]
     ])
 
+# ================= 🚀 Start System (Boot Animation) =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start ခေါ်သည့်အခါ Animation ဖြင့် Boot တက်မည့်စနစ်"""
+    """/start ခေါ်သည့်အခါ Server Connection Animation ဖြင့် Boot တက်မည့်စနစ်"""
     chat_id = update.effective_chat.id
     user_msg_id = update.message.message_id
     
-    msg = await update.message.reply_text("<pre>Initializing Omni-Net... [■■□□□]</pre>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.5)
-    await msg.edit_text("<pre>Bypassing Security... [■■■■□]</pre>", parse_mode=ParseMode.HTML)
+    # 🟢 Frame 1
+    msg = await update.message.reply_text(
+        "<pre>⚙️ OMNI-NET INITIALIZING...\n"
+        "┣ 📡 Ping: Requesting...\n"
+        "┗ 📦 Data: [▓░░░░░░░░░] 10%</pre>", 
+        parse_mode=ParseMode.HTML
+    )
     await asyncio.sleep(0.5)
     
-    main_text = """<blockquote><b>🟢 OMNI-NET TERMINAL V3.0</b></blockquote>
+    # 🟢 Frame 2
+    await msg.edit_text(
+        "<pre>⚙️ OMNI-NET INITIALIZING...\n"
+        "┣ 📡 Ping: 14ms (Secure)\n"
+        "┣ 🗄️ Database: Connected...\n"
+        "┗ 📦 Data: [▓▓▓▓▓░░░░░] 50%</pre>", 
+        parse_mode=ParseMode.HTML
+    )
+    await asyncio.sleep(0.5)
+    
+    # 🟢 Frame 3
+    await msg.edit_text(
+        "<pre>⚙️ OMNI-NET INITIALIZING...\n"
+        "┣ 📡 Ping: 14ms (Secure)\n"
+        "┣ 🗄️ Database: Synced\n"
+        "┣ 🔐 Security: Bypassed\n"
+        "┗ 📦 Data: [▓▓▓▓▓▓▓▓▒░] 85%</pre>", 
+        parse_mode=ParseMode.HTML
+    )
+    await asyncio.sleep(0.5)
+    
+    # 🟢 Frame 4 (Final Menu)
+    main_text = """<blockquote><b>🟢 OMNI-NET TERMINAL V3.1</b></blockquote>
 <pre>System Status: Online
 Access Level : Granted</pre>
 
@@ -58,12 +92,13 @@ Select Operation Protocol:"""
     schedule_delete(context, chat_id, user_msg_id, 300)
     schedule_delete(context, chat_id, msg.message_id, 300)
 
+# ================= 🗂️ Menu Handler =================
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
     if query.data == "back_to_main":
         await query.answer()
-        main_text = """<blockquote><b>🟢 OMNI-NET TERMINAL V3.0</b></blockquote>
+        main_text = """<blockquote><b>🟢 OMNI-NET TERMINAL V3.1</b></blockquote>
 <pre>System Status: Online
 Access Level : Granted</pre>
 
@@ -75,12 +110,18 @@ Select Operation Protocol:"""
 
     if query.data == "menu_academic":
         await query.answer()
-        text = """<blockquote><b>🎓 ACADEMIC CORE</b></blockquote>
+        text = """<blockquote><b>🎓 ACADEMIC & CLASS CORE</b></blockquote>
 <pre>📌 အချိန်ဇယား ကြည့်ရန်:
 /it, /ec, /civil, /ep, /me, /mc, /archi
 
-📌 တာဝန်နှင့် စာမေးပွဲများ:
-/tasks (သို့) /tutorials</pre>"""
+📌 တာဝန်နှင့် စာမေးပွဲများ ကြည့်ရန်:
+/tasks (သို့) /tutorials
+
+📌 တက်ရောက်သူ စာရင်း (Roll Call):
+/rollcall (Attendance PIN ထည့်ရန်)
+
+📌 75% Survival Calculator:
+/skip (မိမိပျက်ထားသော အတန်းများကို တွက်ရန်)</pre>"""
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
 
     elif query.data == "menu_social":
@@ -89,13 +130,17 @@ Select Operation Protocol:"""
 <pre>📌 ရင်ဖွင့် / စနောက်ရန် (DM မှသုံးပါ):
 /confess (နာမည်တပ်၍ ပို့ရန်)
 /confess1 (Anonymous ပို့ရန်)
-/notice (ကြေညာချက်/စနောက်စာ ပို့ရန်)</pre>"""
+/notice (ကြေညာချက်/စနောက်စာ ပို့ရန်)
+
+📌 Profile ပြင်ဆင်ရန်:
+/nickname (မိမိအမည်ပြောင် သတ်မှတ်ရန်)</pre>"""
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
 
     elif query.data == "menu_tools":
         await query.answer()
         text = """<blockquote><b>🛠️ UTILITY NODE</b></blockquote>
 <pre>📌 အထွေထွေ Tool များ:
+/weather - ယနေ့ ရာသီဥတု ကြည့်ရန်
 /wifi - အတန်းတွင်း WiFi ကြည့်ရန်
 /status - ဆာဗာ အခြေအနေ ကြည့်ရန်
 /creator - System Info ကြည့်ရန်
@@ -107,23 +152,65 @@ Select Operation Protocol:"""
 /hex2bin &lt;Hex&gt;</pre>"""
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
 
+    elif query.data == "menu_funds":
+        await query.answer()
+        text = """<blockquote><b>💰 FUNDS & STUDENT INFO</b></blockquote>
+<pre>📌 ကျောင်းသားများ လုပ်ဆောင်ရန်:
+/add - အချက်အလက် စာရင်းသွင်းရန်
+/ph - ဖုန်းနံပါတ် ထည့်သွင်းရန်
+
+📌 Admin များ ရှာဖွေရန်:
+@bot_name (Inline Search) ဖြင့် 
+ခုံနံပါတ်/နာမည် ရိုက်ထည့်ရှာဖွေနိုင်သည်။
+
+[ Admin Only ]
+/list - စာရင်းသွင်းမှု အခြေအနေ
+/hostel - အဆောင်နေသူ သီးသန့်ကြည့်ရန်
+/vault - ရန်ပုံငွေ အခြေအနေချုပ်</pre>"""
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
+
+    elif query.data == "menu_examples":
+        await query.answer()
+        text = """<blockquote><b>📖 COMMAND EXAMPLES</b></blockquote>
+<pre>အောက်ပါ Format များအတိုင်း ကွက်လပ်ခြား၍ ရိုက်ထည့်ပါ -
+
+[ Registration ]
+/add Sem-II-CEIT-01 John Doe
+/ph 09123456789
+
+[ Tools & Crypto ]
+/encrypt I love you
+/decrypt Sdsb3ZlIHlvdQ==
+/bin2hex 101010
+
+[ Admin Fund Entry ]
+/pay 01 sports 5000</pre>"""
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
+
     elif query.data == "menu_admin":
         if await is_admin_check(update, context):
             await query.answer()
             text = """<blockquote><b>⚠️ ADMIN CONSOLE</b></blockquote>
-<pre>📌 စီမံခန့်ခွဲမှုများ:
-/mention - အားလုံးကို Tag ခေါ်ရန်
-/import - CSV မှ Member သွင်းရန်
+<pre>📌 ဘဏ္ဍာရေး စီမံခန့်ခွဲမှု:
+/newfund, /delfund
+/pay, /undo, /remind
+/report, /vault, /export
+
+📌 အတန်းချိန် နှင့် Tasks:
+/addclass, /delclass, /clearday
+/addtask, /addtutorial
+/edittask, /edittutorial
+
+📌 Roll Call စနစ်:
+/attendance, /dates
 
 📌 Bot ကို စာသင်ပေးရန်:
-/addcmd1, /addcmd2, /addcmd3
-/delcmd
+/addcmd1, /delcmd
 
 📌 အခြား စနစ်များ:
 /addwifi, /delwifi
-/addclass, /delclass, /clearday
-/addtask
-/addegg, /delegg</pre>"""
+/addegg, /delegg
+/approvers, /setlimit</pre>"""
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(back_kb), parse_mode=ParseMode.HTML)
         else:
             await query.answer("⛔ Access Denied: Level 9 Clearance Required.", show_alert=True)

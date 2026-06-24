@@ -387,7 +387,6 @@ async def confess_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     
-    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
     markup = await build_target_keyboard(update.effective_user.id, context, "send_confess", "cancel_confess")
     await update.message.reply_text(f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>", reply_markup=markup, parse_mode=ParseMode.HTML)
     return CONFESS_CONFIRM
@@ -428,11 +427,27 @@ async def confess_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dm_txt = f"🚨 <b>PENDING CONFESSION</b>\n👤 <b>Telegram ID:</b> <code>{user_id}</code>\n🎯 <b>Target:</b> {target}\n\n📝 <b>Message:</b>\n<pre>{msg}</pre>"
             kb = [[InlineKeyboardButton("✅ APPROVE", callback_data=f"aprv_{post_id}"), InlineKeyboardButton("❌ REJECT", callback_data=f"rjct_{post_id}")]]
             
+            # 📌 Admin ၅ ယောက်ထဲမှ Group ထဲရှိသူကိုသာ ရွေးထုတ်သည့်စနစ်
             for adm_id in approver_ids:
-                try:
-                    m = await context.bot.send_message(adm_id, text=dm_txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-                    admin_msgs.append({"chat_id": adm_id, "msg_id": m.message_id})
-                except: pass
+                is_allowed = False
+                if adm_id == OWNER_ID:
+                    is_allowed = True  # Owner ကတော့ အကုန် မြင်ရမည်
+                elif target == "all":
+                    is_allowed = True  # "All" ရွေးလျှင် Admin အားလုံးထံ ပို့မည်
+                else:
+                    try:
+                        # 🎯 Target Group ထဲတွင် Admin ရှိ/မရှိ စစ်ဆေးခြင်း
+                        member = await context.bot.get_chat_member(chat_id=int(target), user_id=adm_id)
+                        if member.status in ['member', 'administrator', 'creator', 'restricted']:
+                            is_allowed = True
+                    except:
+                        pass  # Group ထဲတွင် မရှိလျှင် False အတိုင်း ကျန်ခဲ့မည် (စာမပို့ပါ)
+                
+                if is_allowed:
+                    try:
+                        m = await context.bot.send_message(adm_id, text=dm_txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+                        admin_msgs.append({"chat_id": adm_id, "msg_id": m.message_id})
+                    except: pass
                 
             await db.pending_posts.insert_one({
                 "post_id": post_id, "type": "confess_anon", "msg": msg, "target": target,
@@ -482,7 +497,6 @@ async def c1_receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = context.user_data['c1_msg']
     name = context.user_data['c1_name']
     
-    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
     markup = await build_target_keyboard(update.effective_user.id, context, "send_c1", "cancel_c1")
     await update.message.reply_text(f"<b>📝 PREVIEW & SELECT TARGET</b>\n<pre>{msg}</pre>\n\n<i>- {name}</i>", reply_markup=markup, parse_mode=ParseMode.HTML)
     return C1_CONFIRM
@@ -524,11 +538,27 @@ async def c1_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dm_txt = f"🚨 <b>PENDING CONFESSION (CUSTOM)</b>\n👤 <b>Telegram ID:</b> <code>{user_id}</code>\n🎯 <b>Target:</b> {target}\n🎭 <b>Signature:</b> {name}\n\n📝 <b>Message:</b>\n<pre>{msg}</pre>"
             kb = [[InlineKeyboardButton("✅ APPROVE", callback_data=f"aprv_{post_id}"), InlineKeyboardButton("❌ REJECT", callback_data=f"rjct_{post_id}")]]
             
+            # 📌 Admin ၅ ယောက်ထဲမှ Group ထဲရှိသူကိုသာ ရွေးထုတ်သည့်စနစ်
             for adm_id in approver_ids:
-                try:
-                    m = await context.bot.send_message(adm_id, text=dm_txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-                    admin_msgs.append({"chat_id": adm_id, "msg_id": m.message_id})
-                except: pass
+                is_allowed = False
+                if adm_id == OWNER_ID:
+                    is_allowed = True  # Owner ကတော့ အကုန် မြင်ရမည်
+                elif target == "all":
+                    is_allowed = True  # "All" ရွေးလျှင် Admin အားလုံးထံ ပို့မည်
+                else:
+                    try:
+                        # 🎯 Target Group ထဲတွင် Admin ရှိ/မရှိ စစ်ဆေးခြင်း
+                        member = await context.bot.get_chat_member(chat_id=int(target), user_id=adm_id)
+                        if member.status in ['member', 'administrator', 'creator', 'restricted']:
+                            is_allowed = True
+                    except:
+                        pass  # Group ထဲတွင် မရှိလျှင် False အတိုင်း ကျန်ခဲ့မည် (စာမပို့ပါ)
+                
+                if is_allowed:
+                    try:
+                        m = await context.bot.send_message(adm_id, text=dm_txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+                        admin_msgs.append({"chat_id": adm_id, "msg_id": m.message_id})
+                    except: pass
                 
             await db.pending_posts.insert_one({
                 "post_id": post_id, "type": "confess_custom", "msg": msg, "target": target, "name": name,
@@ -565,7 +595,6 @@ async def notice_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sender_uname'] = update.effective_user.username or "No_Username"
     context.user_data['send_time'] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
-    # 📌 ဤနေရာတွင် user_id ကို ပေးပို့၍ membership စစ်ပါသည်
     markup = await build_target_keyboard(update.effective_user.id, context, "send_notice", "cancel_notice")
     await update.message.reply_text(
         f"<b>📝 VERIFY & SELECT TARGET</b>\n<pre>{update.message.text}</pre>",
@@ -580,7 +609,6 @@ async def notice_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.data.startswith("send_notice"):
             target = query.data.replace("send_notice_", "")
             
-            # 📌 User ရှိသော Group များကိုသာ စစ်ထုတ်ပါသည်
             allowed_groups = await get_allowed_groups(update.effective_user.id, context)
             target_ids = allowed_groups if target == "all" else [int(target)]
             msg = context.user_data.get('notice_msg', '')
@@ -604,3 +632,66 @@ async def notice_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await query.edit_message_text(f"<pre>❌ Error: {e}</pre>", parse_mode=ParseMode.HTML)
     return ConversationHandler.END
+
+# ================= 👻 HIDDEN FEATURE: GHOST NOTICE (/notice999) =================
+async def notice999_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm မလိုဘဲ စာသားကို Group အားလုံးထံ ချက်ချင်း ပို့ပေးမည့် လျှို့ဝှက် Command"""
+    if update.effective_chat.type != 'private':
+        try: await update.message.delete()
+        except: pass
+        warn = await update.message.reply_text("<pre>⚠️ DM Access Only.</pre>", parse_mode=ParseMode.HTML)
+        schedule_delete(context, update.effective_chat.id, warn.message_id, 5)
+        return
+
+    # Spam မဖြစ်အောင် Cooldown တော့ ဆက်စစ်ပေးထားပါမည်
+    remain_sec = await check_user_cooldown(update.effective_user.id)
+    if remain_sec > 0:
+        await show_cooldown_warning(update, remain_sec, context)
+        return
+
+    # Command နောက်က စာသားကို ဖြတ်ယူခြင်း (Newline တွေ မပျက်အောင် split သုံးထားသည်)
+    text = update.message.text
+    parts = text.split(maxsplit=1)
+    
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "⚠️ <b>အသုံးပြုနည်း မှားယွင်းနေပါသည်။</b>\n<pre>/notice999 &lt;စာသား&gt;</pre>\n(ဥပမာ - `/notice999 မနက်ဖြန် ကျောင်းပိတ်တယ်ဗျာ`)", 
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    msg = parts[1]
+    user_id = update.effective_user.id
+    
+    # 📌 ပို့ခွင့်ရှိသော Group များကို ဆွဲထုတ်ခြင်း
+    allowed_groups = await get_allowed_groups(user_id, context)
+    if not allowed_groups:
+        await update.message.reply_text("❌ သင်ပို့ခွင့်ရှိသော Group မရှိပါ။ (Group ထဲတွင် မရှိတော့၍ ဖြစ်နိုင်ပါသည်)")
+        return
+
+    identity = await get_user_identity(user_id)
+    final_msg = f"<b>#{identity}</b>\n<pre>{msg}</pre>\n\n<i>- {identity}</i>"
+    
+    # 🚀 Group အားလုံးသို့ တန်းပို့ခြင်း
+    for gid in allowed_groups:
+        try: 
+            await context.bot.send_message(chat_id=gid, text=final_msg, parse_mode=ParseMode.HTML)
+        except Exception as e: 
+            logger.error(f"Group {gid} သို့ပို့ရန်အဆင်မပြေပါ: {e}")
+
+    # 🚨 Admin ကြီး စစ်ဆေးနိုင်ရန် Log Group သို့ ပို့ခြင်း
+    if LOG_GROUP_ID != 0:
+        log_txt = (
+            f"🚨 <b>SYSTEM LOG | #Notice999 (GHOST MODE)</b>\n"
+            f"🎯 <b>Target:</b> ALL ALLOWED GROUPS\n"
+            f"👤 <b>User:</b> @{update.effective_user.username or 'No_Username'} (ID: <code>{user_id}</code>)\n"
+            f"🏷️ <b>Identity:</b> {identity}\n"
+            f"📝 <b>Content:</b>\n<pre>{msg}</pre>"
+        )
+        try: await context.bot.send_message(LOG_GROUP_ID, text=log_txt, parse_mode=ParseMode.HTML)
+        except: pass
+
+    # Cooldown ပြန်မှတ်ခြင်း နှင့် အောင်မြင်ကြောင်း ပြခြင်း
+    await update_user_cooldown(user_id)
+    await update.message.reply_text("<pre>⚡ GHOST NOTICE DELIVERED TO ALL GROUPS.</pre>", parse_mode=ParseMode.HTML)
+

@@ -13,10 +13,24 @@ from handlers.menu import start, menu_handler
 from handlers.admin_tools import import_members, mention_all
 from handlers.funds import add_fund, clear_fund, check_fund
 from handlers.custom_cmds import add_custom_cmd, del_custom_cmd, handle_custom_cmd
+import datetime
+from datetime import timezone, timedelta
+from handlers.weather import weather_cmd, morning_weather_alert
 from handlers.tools import (
     show_creator, show_status, show_wifi, paginate_wifi,
     add_wifi, del_wifi, add_egg, del_egg,
     encrypt_decrypt, bin_to_hex, hex_to_bin
+)
+
+from handlers.attendance import (
+    start_attendance_cmd, close_attendance_action,
+    rollcall_start, rollcall_receive_pin, rollcall_cancel, ROLL_PIN_INPUT,
+    view_dates_cmd, dates_callback_handler
+)
+
+from handlers.skip import (
+    skip_start, skip_process_major, skip_process_subject, skip_receive_missed, skip_cancel_cmd,
+    SKIP_MAJOR, SKIP_SUBJECT, SKIP_MISSED
 )
 
 # 📌 ဤနေရာတွင် ရှုပ်နေသော social imports များကို တစ်ခုတည်း အဖြစ် သပ်သပ်ရပ်ရပ် ပေါင်းထားပါသည်
@@ -24,7 +38,7 @@ from handlers.social import (
     confess_start, confess_receive, confess_action,
     c1_start, c1_receive_msg, c1_receive_name, c1_action,
     notice_start, notice_receive, notice_action, cancel_conv,
-    set_cooldown_cmd, set_cooldown_action, set_user_cooldown_cmd, set_daily_limit_cmd,
+    set_cooldown_cmd, set_cooldown_action, set_user_cooldown_cmd, set_daily_limit_cmd, notice999_cmd,
     admin_approval_action, approvers_cmd, approvers_callback, add_approver_receive, nickname_start, nickname_receive, nickname_action,
     CONFESS_MSG, CONFESS_CONFIRM, C1_MSG, C1_NAME, C1_CONFIRM,
     NOTICE_MSG, NOTICE_CONFIRM, APPROVER_ADD, NICK_MSG, NICK_CONFIRM
@@ -111,6 +125,22 @@ def main():
     app.add_handler(CommandHandler('delwifi', del_wifi))
     app.add_handler(CommandHandler('addegg', add_egg))
     app.add_handler(CommandHandler('delegg', del_egg))
+    app.add_handler(CommandHandler('notice999', notice999_cmd))
+
+    # 📌 Attendance & Roll Call System
+    app.add_handler(CommandHandler('attendance', start_attendance_cmd))
+    app.add_handler(CommandHandler('dates', view_dates_cmd))
+    app.add_handler(CallbackQueryHandler(close_attendance_action, pattern="^att_close_"))
+    app.add_handler(CallbackQueryHandler(dates_callback_handler, pattern="^vdate_"))
+
+    roll_conv = ConversationHandler(
+        entry_points=[CommandHandler('rollcall', rollcall_start)],
+        states={
+            ROLL_PIN_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, rollcall_receive_pin)]
+        },
+        fallbacks=[CommandHandler('cancel', rollcall_cancel)]
+    )
+    app.add_handler(roll_conv)
 
     # Routing Management
     app.add_handler(CommandHandler('routes', route_cmd))
@@ -147,9 +177,29 @@ def main():
     app.add_handler(CommandHandler("delclass", del_class))
     app.add_handler(CommandHandler("clearday", clear_day))
     
+    # 📌 Weather Command
+    app.add_handler(CommandHandler('weather', weather_cmd))
+
+    # 📌 Morning Auto Weather Alert (မနက် ၇:၃၀ တိုင်း လှမ်းပို့ရန် - တနင်္လာ မှ သောကြာ)
+    mm_tz = timezone(timedelta(hours=6, minutes=30))
+    alert_time = datetime.time(hour=7, minute=30, tzinfo=mm_tz)
+    app.job_queue.run_daily(morning_weather_alert, time=alert_time, days=(0, 1, 2, 3, 4))
+
     # Task Management
     app.add_handler(CommandHandler("addtask", add_task))
     app.add_handler(CommandHandler(["tutorials", "tasks"], get_tasks))
+
+    # 📌 75% Survival Calculator (Per Subject Auto Calculate)
+    skip_conv = ConversationHandler(
+        entry_points=[CommandHandler('skip', skip_start)],
+        states={
+            SKIP_MAJOR: [CallbackQueryHandler(skip_process_major, pattern="^skipmaj_|^skip_cancel$")],
+            SKIP_SUBJECT: [CallbackQueryHandler(skip_process_subject, pattern="^skipsub_|^skip_cancel$")],
+            SKIP_MISSED: [MessageHandler(filters.TEXT & ~filters.COMMAND, skip_receive_missed)]
+        },
+        fallbacks=[CommandHandler('cancel', skip_cancel_cmd)]
+    )
+    app.add_handler(skip_conv)
 
     # 📌 Nickname Setup Conversation
     nickname_conv = ConversationHandler(

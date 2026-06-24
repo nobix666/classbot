@@ -1,7 +1,9 @@
 import os
 import logging
 import asyncio
+import random
 from datetime import datetime, timedelta, timezone
+from telegram.ext import ConversationHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -11,6 +13,8 @@ logger = logging.getLogger(__name__)
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 MAJORS = ["it", "mc", "archi", "ep", "ec", "me", "civil"] # Routing အတွက် Default List
+T_SUBJECT, T_DATE, T_CONTENT = range(70, 73)
+SUBJECTS_LIST = ["Myanmar", "English", "Maths", "Physics", "CEIT", "Workshop"]
 
 # ================= 🛡️ Admin & Helpers =================
 async def is_admin_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -190,14 +194,19 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_msg_id = update.message.message_id
     cmd = update.message.text.split()[0].lower()
-    task_type = "Tutorial" if "tutorial" in cmd else "Assignment"
+    task_type = "tutorial" if "tutorial" in cmd else "task"
     
     db = get_db()
     if db is None: return
     
-    cursor = db.tasks.find({"type": task_type}).sort("deadline", 1)
+    mm_tz = timezone(timedelta(hours=6, minutes=30))
+    now = datetime.now(mm_tz)
+    
+    # 📌 Archive စနစ်: Date ကျော်သွားတာတွေကို အလိုလို ဖျောက်ထားမည်
+    cursor = db.tasks.find({"type": task_type, "target_dt": {"$gte": now}}).sort("target_dt", 1)
     tasks = await cursor.to_list(length=100)
-    title = "📝 <b>ASSIGNMENTS & TASKS</b>" if task_type == "Assignment" else "📚 <b>TUTORIALS & EXAMS</b>"
+    
+    title = "📚 <b>TUTORIALS & EXAMS</b>" if task_type == "tutorial" else "📝 <b>ASSIGNMENTS & TASKS</b>"
     
     if not tasks:
         msg = f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 <b>ဘာမှမရှိသေးဘူး။ ဘာလဲ စာလုပ်ချင်လို့လား။</b>"
@@ -205,14 +214,150 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 60)
         return
         
+    # ရက်စွဲအလိုက် အုပ်စုဖွဲ့ပြသခြင်း
+    grouped = {}
+    for t in tasks:
+        d_str = t.get('date_str', 'Unknown Date')
+        if d_str not in grouped: grouped[d_str] = []
+        grouped[d_str].append(t)
+        
     msg = f"{title}\n━━━━━━━━━━━━━━━━━━\n"
-    for idx, t in enumerate(tasks, 1):
-        msg += f"{idx}. 📌 <b>{t['title']}</b>\n"
-        msg += f"   🏷️ Major: <code>{t['major']}</code>\n"
-        msg += f"   📅 Deadline: <code>{t['deadline']}</code>\n\n"
+    for d_str, items in grouped.items():
+        msg += f"📅 <b>{d_str} (မနက် ၉:၀၀ နာရီ)</b>\n"
+        for t in items:
+            msg += f"  🔹 <code>[ID:{t.get('short_id')}]</code> <b>{t.get('subject')}</b>\n"
+            msg += f"      👉 <i>{t.get('content')}</i>\n"
+        msg += "\n"
         
     sent = await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
-    schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 60)
+    schedule_academic_delete(context, chat_id, [user_msg_id, sent.message_id], 120)
+
+
+# ================= 📝 TASKS & TUTORIALS (ADD & EDIT) =================
+async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ယခင် add_task နေရာတွင် အစားထိုးရန်"""
+    if not await is_admin_check(update, context): return ConversationHandler.END
+
+    cmd = update.message.text.split()[0].lower()
+    
+    if "edit" in cmd:
+        if len(context.args) < 1:
+            await update.message.reply_text(f"⚠️ အသုံးပြုနည်း: <code>{cmd} &lt;ID&gt;</code>", parse_mode=ParseMode.HTML)
+            return ConversationHandler.END
+        try:
+            task_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ ID သည် ဂဏန်းဖြစ်ရမည်။")
+            return ConversationHandler.END
+            
+        db = get_db()
+        task = await db.tasks.find_one({"short_id": task_id})
+        if not task:
+            await update.message.reply_text("❌ ထို ID ဖြင့် ရှာမတွေ့ပါ။")
+            return ConversationHandler.END
+            
+        context.user_data['t_edit_id'] = task_id
+        context.user_data['t_type'] = task.get("type", "task")
+        txt = f"✏️ <b>ID: {task_id} အား ပြင်ဆင်ခြင်း</b>"
+    else:
+        context.user_data['t_type'] = "tutorial" if "tutorial" in cmd else "task"
+        context.user_data.pop('t_edit_id', None)
+        txt = "🎯 <b>အသစ်ထည့်သွင်းခြင်း</b>"
+
+    # ဘာသာရပ်ရွေးရန် Inline Buttons
+    keyboard = []
+    for i in range(0, len(SUBJECTS_LIST), 2):
+        row = [InlineKeyboardButton(s, callback_data=f"tsubj_{s}") for s in SUBJECTS_LIST[i:i+2]]
+        keyboard.append(row)
+        
+    await update.message.reply_text(f"{txt}\n\nဘာသာရပ်ကို ရွေးချယ်ပါ -", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    return T_SUBJECT
+
+async def t_subject_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    subject = query.data.split("_")[1]
+    context.user_data['t_subject'] = subject
+    await query.edit_message_text(f"✅ ဘာသာရပ်: <b>{subject}</b>\n\n📅 <b>ရက်စွဲထည့်ပါ။</b> (ဥပမာ - <code>28/06/2026</code>)", parse_mode=ParseMode.HTML)
+    return T_DATE
+
+async def t_date_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    date_str = update.message.text.strip()
+    mm_tz = timezone(timedelta(hours=6, minutes=30))
+    try:
+        dt = datetime.strptime(date_str, "%d/%m/%Y")
+        target_dt = dt.replace(hour=9, minute=0, second=0, tzinfo=mm_tz)
+        
+        if target_dt < datetime.now(mm_tz):
+            await update.message.reply_text("❌ အတိတ်က ရက်စွဲများ ထည့်၍မရပါ။ အသစ်ထပ်ထည့်ပါ။")
+            return T_DATE
+            
+        context.user_data['t_date_str'] = date_str
+        context.user_data['t_target_dt'] = target_dt
+        await update.message.reply_text(f"✅ ရက်စွဲ: <b>{date_str}</b>\n\n📝 <b>အကြောင်းအရာ (Content) ကို ရိုက်ထည့်ပါ။</b>", parse_mode=ParseMode.HTML)
+        return T_CONTENT
+    except ValueError:
+        await update.message.reply_text("❌ Format မှားနေပါသည်။ <code>DD/MM/YYYY</code> ပုံစံဖြင့် ထပ်ရိုက်ပါ။", parse_mode=ParseMode.HTML)
+        return T_DATE
+
+async def t_content_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    content = update.message.text.strip()
+    task_type = context.user_data.get('t_type')
+    subject = context.user_data.get('t_subject')
+    date_str = context.user_data.get('t_date_str')
+    target_dt = context.user_data.get('t_target_dt')
+    edit_id = context.user_data.get('t_edit_id')
+    
+    db = get_db()
+    if edit_id:
+        await db.tasks.update_one(
+            {"short_id": edit_id},
+            {"$set": {"subject": subject, "date_str": date_str, "target_dt": target_dt, "content": content, "reminded": False}}
+        )
+        msg = f"✅ <b>[ID: {edit_id}] ပြင်ဆင်ပြီးပါပြီ။</b>"
+    else:
+        short_id = random.randint(1000, 9999)
+        await db.tasks.insert_one({
+            "short_id": short_id, "type": task_type, "subject": subject,
+            "date_str": date_str, "target_dt": target_dt, "content": content, "reminded": False
+        })
+        msg = f"✅ <b>အောင်မြင်ပါသည်။</b> (ID: <code>{short_id}</code>)"
+
+    await update.message.reply_text(f"{msg}\n\n📚 {subject}\n📅 {date_str}\n📝 {content}", parse_mode=ParseMode.HTML)
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# ================= 🔔 REMINDER JOB =================
+async def tasks_reminder_job(context: ContextTypes.DEFAULT_TYPE):
+    db = get_db()
+    if db is None: return
+
+    mm_tz = timezone(timedelta(hours=6, minutes=30))
+    now = datetime.now(mm_tz)
+    group_ids = get_class_groups() # Group ID ယူမည့် Function ရှိပြီးသားဖြစ်ရမည်
+    if not group_ids: return
+    main_group_id = group_ids[0]
+
+    tasks = await db.tasks.find({"reminded": False}).to_list(length=None)
+    for t in tasks:
+        dt_target = t.get("target_dt")
+        if not dt_target: continue
+        dt_target = dt_target.replace(tzinfo=timezone.utc).astimezone(mm_tz)
+        task_type = t.get("type", "task")
+        
+        remind_time = dt_target - timedelta(days=3) if task_type == "tutorial" else dt_target - timedelta(hours=18)
+
+        if now >= remind_time and now < dt_target:
+            emoji = "📚" if task_type == "tutorial" else "📝"
+            title = "TUTORIAL REMINDER" if task_type == "tutorial" else "ASSIGNMENT REMINDER"
+            msg = f"🔔 <b>{title}</b>\n━━━━━━━━━━━━━━━━━━\n{emoji} <b>ဘာသာရပ်:</b> {t.get('subject')}\n📅 <b>နောက်ဆုံးရက်:</b> <code>{t.get('date_str')}</code> (မနက် ၉:၀၀ နာရီ)\n\n📖 <b>အကြောင်းအရာ:</b>\n{t.get('content')}"
+            
+            try:
+                await context.bot.send_message(chat_id=main_group_id, text=msg, parse_mode=ParseMode.HTML)
+                await db.tasks.update_one({"_id": t["_id"]}, {"$set": {"reminded": True}})
+            except: pass
+
 
 # ================= ⚙️ ADMIN MANAGEMENT =================
 async def add_class(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -261,15 +406,3 @@ async def clear_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"$set": {"periods": []}}
     )
     await update.message.reply_text(f"🧹 {day} ၏ <b>{major.upper()}</b> အတန်းချိန်အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ。", parse_mode=ParseMode.HTML)
-
-async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_check(update, context): return
-    args = context.args
-    if len(args) < 4: return await update.message.reply_text("⚠️ `/addtask <Type> <Major> <Deadline> <Title>`", parse_mode=ParseMode.HTML)
-    
-    task_type, major, deadline, title = args[0], args[1], args[2], " ".join(args[3:])
-    db = get_db()
-    if db is None: return
-    
-    await db.tasks.insert_one({"type": task_type, "major": major, "deadline": deadline, "title": title})
-    await update.message.reply_text("✅ Task/Tutorial အသစ် မှတ်သားပြီးပါပြီ။")
